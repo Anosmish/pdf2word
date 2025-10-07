@@ -10,10 +10,24 @@ class PDFToWordConverter {
         this.downloadBtn = document.getElementById('downloadBtn');
         this.errorMessage = document.getElementById('errorMessage');
         
-        // Update with your Render backend URL
-        this.backendUrl = 'https://pdf2word-4hoo.onrender.com';
+        // UPDATE WITH YOUR RENDER BACKEND URL
+        this.backendUrl = 'https://pdf2msword.netlify.app'; // ← UPDATE THIS
         
         this.initEventListeners();
+        this.testBackendConnection();
+    }
+
+    async testBackendConnection() {
+        try {
+            const response = await fetch(`${this.backendUrl}/health`);
+            if (response.ok) {
+                console.log('Backend connection successful');
+            } else {
+                console.error('Backend connection failed');
+            }
+        } catch (error) {
+            console.error('Cannot connect to backend:', error);
+        }
     }
 
     initEventListeners() {
@@ -55,6 +69,8 @@ class PDFToWordConverter {
     }
 
     handleFile(file) {
+        console.log('File selected:', file.name, file.type, file.size);
+        
         // Validate file type
         if (file.type !== 'application/pdf') {
             this.showError('Please select a PDF file');
@@ -64,6 +80,11 @@ class PDFToWordConverter {
         // Validate file size (20MB)
         if (file.size > 20 * 1024 * 1024) {
             this.showError('File size must be less than 20MB');
+            return;
+        }
+
+        if (file.size === 0) {
+            this.showError('File is empty');
             return;
         }
 
@@ -77,20 +98,24 @@ class PDFToWordConverter {
         formData.append('file', file);
 
         try {
+            this.status.textContent = 'Uploading PDF...';
+            
             const response = await fetch(`${this.backendUrl}/convert`, {
                 method: 'POST',
                 body: formData
             });
 
             const result = await response.json();
+            console.log('Conversion response:', result);
 
             if (!response.ok) {
-                throw new Error(result.error || 'Conversion failed');
+                throw new Error(result.error || `Conversion failed (${response.status})`);
             }
 
             this.showResult(result.file_id, result.filename, result.original_filename);
 
         } catch (error) {
+            console.error('Conversion error:', error);
             this.showError(error.message);
         }
     }
@@ -101,16 +126,17 @@ class PDFToWordConverter {
         this.resultArea.style.display = 'none';
         this.errorArea.style.display = 'none';
         
-        // Simulate progress animation
+        // Animate progress bar
         let width = 0;
         const interval = setInterval(() => {
-            if (width >= 90) {
+            if (width >= 85) {
                 clearInterval(interval);
+                this.status.textContent = 'Converting PDF to Word...';
             } else {
-                width += Math.random() * 10;
-                this.progress.style.width = Math.min(width, 90) + '%';
+                width += Math.random() * 15;
+                this.progress.style.width = Math.min(width, 85) + '%';
             }
-        }, 200);
+        }, 300);
     }
 
     showResult(fileId, filename, originalFilename) {
@@ -118,42 +144,60 @@ class PDFToWordConverter {
         this.resultArea.style.display = 'block';
         this.fileId = fileId;
         this.convertedFilename = filename;
-        this.originalFilename = originalFilename;
+        
+        // Create a proper filename for download
+        this.downloadFilename = originalFilename || 
+                               'converted_document.docx';
+        
         this.progress.style.width = '100%';
+        console.log('Ready for download:', this.fileId, this.downloadFilename);
     }
 
     async downloadConvertedFile() {
-        if (this.fileId && this.convertedFilename) {
-            try {
-                this.downloadBtn.textContent = 'Downloading...';
-                this.downloadBtn.disabled = true;
+        if (!this.fileId) {
+            this.showError('No file to download');
+            return;
+        }
 
-                const response = await fetch(
-                    `${this.backendUrl}/download/${this.fileId}/${this.convertedFilename}`
-                );
-                
-                if (!response.ok) {
-                    throw new Error('Download failed');
-                }
+        try {
+            this.downloadBtn.textContent = 'Downloading...';
+            this.downloadBtn.disabled = true;
 
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = this.originalFilename || 'converted.docx';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
-
-                // Files will be automatically cleaned up by the backend
-
-            } catch (error) {
-                this.showError('Download failed. Please try again.');
-            } finally {
-                this.downloadBtn.textContent = 'Download Word Document';
-                this.downloadBtn.disabled = false;
+            console.log('Downloading file ID:', this.fileId);
+            
+            const response = await fetch(`${this.backendUrl}/download/${this.fileId}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Download failed');
             }
+
+            // Get the file as blob
+            const blob = await response.blob();
+            console.log('Received blob:', blob.size, 'bytes', blob.type);
+            
+            // Create download link
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = this.downloadFilename;
+            
+            // Trigger download
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Clean up
+            window.URL.revokeObjectURL(url);
+            
+            console.log('Download completed successfully');
+
+        } catch (error) {
+            console.error('Download error:', error);
+            this.showError('Download failed: ' + error.message);
+        } finally {
+            this.downloadBtn.textContent = 'Download Word Document';
+            this.downloadBtn.disabled = false;
         }
     }
 
@@ -163,15 +207,15 @@ class PDFToWordConverter {
         this.resultArea.style.display = 'none';
         this.errorArea.style.display = 'block';
         this.errorMessage.textContent = message;
+        console.error('Error:', message);
     }
 }
 
 function resetConverter() {
-    const converter = new PDFToWordConverter();
-    converter.fileInput.value = '';
+    location.reload();
 }
 
-// Initialize the converter when the page loads
+// Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
     new PDFToWordConverter();
 });

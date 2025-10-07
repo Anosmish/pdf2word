@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # CORS configuration - UPDATE WITH YOUR FRONTEND URL
-frontend_url = "https://your-frontend-app.netlify.app"  # ← UPDATE THIS
+frontend_url = "https://pdf2msword.netlify.app"  # ← UPDATE THIS
 CORS(app, resources={
     r"/*": {
         "origins": [

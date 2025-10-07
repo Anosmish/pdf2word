@@ -7,6 +7,30 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Animated Background -->
+    <div class="animated-bg"></div>
+    
+    <!-- Reptile Cursor Follower -->
+    <div class="reptile" id="reptile">
+        <div class="reptile-body">
+            <div class="reptile-head">
+                <div class="reptile-eye"></div>
+            </div>
+            <div class="reptile-tail"></div>
+        </div>
+    </div>
+
+    <!-- Loading Animation -->
+    <div class="loading-animation" id="loadingAnimation">
+        <div class="doc-icon">📄</div>
+        <div class="conversion-text">Converting PDF to Word</div>
+        <div class="loading-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <h1>PDF to Word Converter</h1>
@@ -16,7 +40,7 @@
         <main>
             <div class="upload-area" id="uploadArea">
                 <div class="upload-content">
-                    <i class="upload-icon">📄</i>
+                    <div class="file-icon">📄</div>
                     <h3>Drop your PDF file here</h3>
                     <p>or click to browse</p>
                     <input type="file" id="fileInput" accept=".pdf" hidden>
@@ -27,23 +51,31 @@
             </div>
 
             <div class="progress-area" id="progressArea" style="display: none;">
-                <div class="progress-bar">
-                    <div class="progress" id="progress"></div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress" id="progress"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Uploading...</div>
                 </div>
-                <p class="status" id="status">Converting...</p>
             </div>
 
             <div class="result-area" id="resultArea" style="display: none;">
                 <div class="success-message">
-                    <i class="success-icon">✅</i>
+                    <div class="success-animation">
+                        <div class="checkmark">✓</div>
+                    </div>
                     <h3>Conversion Successful!</h3>
-                    <button class="download-btn" id="downloadBtn">Download Word Document</button>
+                    <p>Your PDF has been converted to Word format</p>
+                    <div class="action-buttons">
+                        <button class="download-btn" id="downloadBtn">Download Word Document</button>
+                        <button class="new-file-btn" id="newFileBtn">Convert Another File</button>
+                    </div>
                 </div>
             </div>
 
             <div class="error-area" id="errorArea" style="display: none;">
                 <div class="error-message">
-                    <i class="error-icon">❌</i>
+                    <div class="error-icon">❌</div>
                     <h3 id="errorMessage">Conversion Failed</h3>
                     <button class="retry-btn" onclick="resetConverter()">Try Again</button>
                 </div>
@@ -51,7 +83,7 @@
         </main>
 
         <footer>
-          <p>Supports PDF files up to 20MB • Formatting preserved • Free to use</p>
+            <p>Supports PDF files up to 20MB • Formatting preserved • Free to use</p>
         </footer>
     </div>
 

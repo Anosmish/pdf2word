@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 import threading
 import time
+import atexit
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +26,7 @@ ALLOWED_EXTENSIONS = {'pdf'}
 
 # Store file metadata for cleanup
 file_registry = {}
+cleanup_thread = None
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -112,6 +114,26 @@ def cleanup_file_immediately(file_id):
         cleanup_file(file_data.get('pdf_path'))
         cleanup_file(file_data.get('docx_path'))
         logger.info(f"Immediately cleaned up: {file_id}")
+
+def start_cleanup_thread():
+    """
+    Start the background cleanup thread
+    """
+    global cleanup_thread
+    if cleanup_thread is None or not cleanup_thread.is_alive():
+        cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
+        cleanup_thread.start()
+        logger.info("Cleanup thread started")
+
+def cleanup_on_shutdown():
+    """
+    Cleanup function that runs when the application shuts down
+    """
+    logger.info("Shutting down - cleaning up all files...")
+    for file_id, file_data in list(file_registry.items()):
+        cleanup_file(file_data.get('pdf_path'))
+        cleanup_file(file_data.get('docx_path'))
+    logger.info("Shutdown cleanup completed")
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -261,12 +283,20 @@ def not_found(error):
     return jsonify({'error': 'Endpoint not found'}), 404
 
 # Start cleanup thread when app starts
-@app.before_first_request
-def start_cleanup_thread():
-    cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
-    cleanup_thread.start()
-    logger.info("Cleanup thread started")
+@app.before_request
+def before_first_request():
+    """
+    Start cleanup thread before the first request
+    """
+    if not hasattr(app, 'cleanup_started'):
+        start_cleanup_thread()
+        atexit.register(cleanup_on_shutdown)
+        app.cleanup_started = True
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    # Start cleanup thread
+    start_cleanup_thread()
+    # Register shutdown cleanup
+    atexit.register(cleanup_on_shutdown)
     app.run(host='0.0.0.0', port=port, debug=False)

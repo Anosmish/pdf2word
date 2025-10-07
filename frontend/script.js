@@ -11,7 +11,7 @@ class PDFToWordConverter {
         this.errorMessage = document.getElementById('errorMessage');
         
         // UPDATE WITH YOUR RENDER BACKEND URL
-        this.backendUrl = 'https://pdf2msword.netlify.app'; // ← UPDATE THIS
+        this.backendUrl = 'https://pdf2word-4hoo.onrender.com'; // ← UPDATE THIS
         
         this.initEventListeners();
         this.testBackendConnection();

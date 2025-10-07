@@ -16,131 +16,66 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS configuration - UPDATE WITH YOUR FRONTEND URL
+frontend_url = "https://your-frontend-app.netlify.app"  # ← UPDATE THIS
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            frontend_url,
+            "http://localhost:3000",
+            "http://localhost:8000"
+        ]
+    }
+})
 
 # Configuration
-app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB limit
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
-app.config['CLEANUP_INTERVAL'] = 300  # 5 minutes
 ALLOWED_EXTENSIONS = {'pdf'}
-
-# Store file metadata for cleanup
-file_registry = {}
-cleanup_thread = None
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def convert_pdf_to_docx(pdf_path, docx_path):
     """
-    Convert PDF to DOCX while preserving formatting
+    Convert PDF to DOCX with detailed error handling
     """
     try:
+        logger.info(f"Starting conversion: {pdf_path} -> {docx_path}")
+        
+        # Check if PDF file exists and is readable
+        if not os.path.exists(pdf_path):
+            logger.error(f"PDF file does not exist: {pdf_path}")
+            return False
+            
+        # Get file size
+        file_size = os.path.getsize(pdf_path)
+        logger.info(f"PDF file size: {file_size} bytes")
+        
+        # Perform conversion
         cv = Converter(pdf_path)
         cv.convert(docx_path, start=0, end=None)
         cv.close()
-        return True
+        
+        # Check if DOCX was created
+        if os.path.exists(docx_path):
+            docx_size = os.path.getsize(docx_path)
+            logger.info(f"Conversion successful! DOCX file size: {docx_size} bytes")
+            return True
+        else:
+            logger.error("Conversion failed - no DOCX file created")
+            return False
+            
     except Exception as e:
         logger.error(f"Conversion error: {str(e)}")
         return False
-
-def cleanup_file(file_path):
-    """
-    Safely remove a file if it exists
-    """
-    try:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            logger.info(f"Cleaned up file: {file_path}")
-            return True
-    except Exception as e:
-        logger.error(f"Error cleaning up {file_path}: {str(e)}")
-    return False
-
-def cleanup_old_files():
-    """
-    Background thread to clean up files older than 1 hour
-    """
-    while True:
-        try:
-            current_time = datetime.now().timestamp()
-            files_to_remove = []
-            
-            # Find files older than 1 hour
-            for file_id, file_data in list(file_registry.items()):
-                if current_time - file_data['created_time'] > 3600:  # 1 hour
-                    files_to_remove.append(file_id)
-            
-            # Remove old files
-            for file_id in files_to_remove:
-                file_data = file_registry.pop(file_id, None)
-                if file_data:
-                    cleanup_file(file_data.get('pdf_path'))
-                    cleanup_file(file_data.get('docx_path'))
-                    logger.info(f"Auto-cleaned old file: {file_id}")
-            
-            time.sleep(app.config['CLEANUP_INTERVAL'])
-            
-        except Exception as e:
-            logger.error(f"Cleanup thread error: {str(e)}")
-            time.sleep(60)  # Wait 1 minute on error
-
-def register_file(file_id, pdf_path, docx_path):
-    """
-    Register files for automatic cleanup
-    """
-    file_registry[file_id] = {
-        'pdf_path': pdf_path,
-        'docx_path': docx_path,
-        'created_time': datetime.now().timestamp(),
-        'downloaded': False
-    }
-
-def mark_file_downloaded(file_id):
-    """
-    Mark file as downloaded and schedule immediate cleanup
-    """
-    if file_id in file_registry:
-        file_registry[file_id]['downloaded'] = True
-        # Schedule cleanup after 30 seconds to ensure download completes
-        threading.Timer(30.0, cleanup_file_immediately, args=[file_id]).start()
-
-def cleanup_file_immediately(file_id):
-    """
-    Immediately clean up files for a specific file_id
-    """
-    file_data = file_registry.pop(file_id, None)
-    if file_data:
-        cleanup_file(file_data.get('pdf_path'))
-        cleanup_file(file_data.get('docx_path'))
-        logger.info(f"Immediately cleaned up: {file_id}")
-
-def start_cleanup_thread():
-    """
-    Start the background cleanup thread
-    """
-    global cleanup_thread
-    if cleanup_thread is None or not cleanup_thread.is_alive():
-        cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
-        cleanup_thread.start()
-        logger.info("Cleanup thread started")
-
-def cleanup_on_shutdown():
-    """
-    Cleanup function that runs when the application shuts down
-    """
-    logger.info("Shutting down - cleaning up all files...")
-    for file_id, file_data in list(file_registry.items()):
-        cleanup_file(file_data.get('pdf_path'))
-        cleanup_file(file_data.get('docx_path'))
-    logger.info("Shutdown cleanup completed")
 
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({
         'status': 'healthy', 
-        'timestamp': datetime.utcnow().isoformat(),
-        'files_tracked': len(file_registry)
+        'timestamp': datetime.utcnow().isoformat()
     })
 
 @app.route('/convert', methods=['POST'])
@@ -148,126 +83,152 @@ def convert_pdf():
     """
     Convert PDF to Word document
     """
+    logger.info("Received conversion request")
+    
     if 'file' not in request.files:
+        logger.error("No file in request")
         return jsonify({'error': 'No file provided'}), 400
     
     file = request.files['file']
     
     if file.filename == '':
+        logger.error("Empty filename")
         return jsonify({'error': 'No file selected'}), 400
     
     if not allowed_file(file.filename):
+        logger.error(f"Invalid file type: {file.filename}")
         return jsonify({'error': 'Only PDF files are allowed'}), 400
     
+    # Generate unique file IDs
     file_id = str(uuid.uuid4())
     original_filename = secure_filename(file.filename)
-    pdf_filename = f"{file_id}_{original_filename}"
-    docx_filename = f"{file_id}_{original_filename.rsplit('.', 1)[0]}.docx"
+    
+    # Create filenames
+    pdf_filename = f"{file_id}.pdf"
+    docx_filename = f"{file_id}.docx"
     
     pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
     docx_path = os.path.join(app.config['UPLOAD_FOLDER'], docx_filename)
     
+    logger.info(f"Processing file: {original_filename}")
+    logger.info(f"PDF path: {pdf_path}")
+    logger.info(f"DOCX path: {docx_path}")
+    
     try:
-        # Save uploaded file
+        # Save uploaded PDF file
         file.save(pdf_path)
-        logger.info(f"File saved: {pdf_path}")
+        logger.info(f"PDF saved successfully: {os.path.getsize(pdf_path)} bytes")
         
         # Convert PDF to DOCX
-        logger.info("Starting conversion...")
+        logger.info("Starting PDF to DOCX conversion...")
         success = convert_pdf_to_docx(pdf_path, docx_path)
         
         if not success:
-            # Clean up on conversion failure
-            cleanup_file(pdf_path)
-            cleanup_file(docx_path)
-            return jsonify({'error': 'Failed to convert PDF file. The file might be corrupted or protected.'}), 500
+            # Clean up on failure
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+            return jsonify({'error': 'Conversion failed. The PDF might be corrupted, protected, or contain unsupported content.'}), 500
         
+        # Verify conversion worked
         if not os.path.exists(docx_path):
-            cleanup_file(pdf_path)
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
             return jsonify({'error': 'Conversion failed - no output file created'}), 500
         
-        file_size = os.path.getsize(docx_path)
-        logger.info(f"Conversion successful. File size: {file_size} bytes")
+        # Get file sizes for logging
+        pdf_size = os.path.getsize(pdf_path)
+        docx_size = os.path.getsize(docx_path)
         
-        # Register files for cleanup
-        register_file(file_id, pdf_path, docx_path)
+        logger.info(f"Conversion completed! PDF: {pdf_size} bytes -> DOCX: {docx_size} bytes")
+        
+        # Clean up PDF file immediately (we don't need it anymore)
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+            logger.info("Cleaned up PDF file")
         
         return jsonify({
             'success': True,
             'message': 'File converted successfully',
             'file_id': file_id,
             'filename': docx_filename,
-            'original_filename': original_filename,
-            'file_size': file_size
+            'original_filename': original_filename.replace('.pdf', '.docx'),
+            'file_size': docx_size
         })
         
     except Exception as e:
         # Clean up on any error
-        cleanup_file(pdf_path)
-        cleanup_file(docx_path)
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+        if os.path.exists(docx_path):
+            os.remove(docx_path)
+            
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
-@app.route('/download/<file_id>/<filename>', methods=['GET'])
-def download_file(file_id, filename):
+@app.route('/download/<file_id>', methods=['GET'])
+def download_file(file_id):
     """
-    Download converted file and trigger cleanup
+    Download converted Word file
     """
     try:
+        # Security check
+        if '..' in file_id or len(file_id) != 36:  # UUID length
+            return jsonify({'error': 'Invalid file ID'}), 400
+        
+        filename = f"{file_id}.docx"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # Security checks
-        if not os.path.exists(file_path) or '..' in filename or not filename.endswith('.docx'):
-            return jsonify({'error': 'File not found'}), 404
+        logger.info(f"Download request for: {filename}")
+        logger.info(f"File path: {file_path}")
+        logger.info(f"File exists: {os.path.exists(file_path)}")
         
-        # Verify file belongs to the file_id
-        if not filename.startswith(file_id):
-            return jsonify({'error': 'Invalid file access'}), 403
+        # Check if file exists
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            return jsonify({'error': 'File not found or expired'}), 404
         
-        # Get original filename for download
-        original_name = filename.split('_', 1)[1] if '_' in filename else 'converted.docx'
+        # Get file size
+        file_size = os.path.getsize(file_path)
+        logger.info(f"Serving file: {filename} ({file_size} bytes)")
         
-        # Mark for cleanup after download
-        mark_file_downloaded(file_id)
+        # Schedule cleanup after 60 seconds
+        threading.Timer(60.0, lambda: cleanup_file(file_path)).start()
         
+        # Send the file
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=original_name,
+            download_name=f"converted_{file_id}.docx",
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         
     except Exception as e:
         logger.error(f"Download error: {str(e)}")
-        return jsonify({'error': 'File not found'}), 404
+        return jsonify({'error': 'Download failed'}), 500
 
-@app.route('/cleanup', methods=['POST'])
-def manual_cleanup():
+def cleanup_file(file_path):
     """
-    Manual cleanup endpoint (optional)
+    Clean up a single file
     """
     try:
-        files_cleaned = 0
-        current_time = datetime.now().timestamp()
-        
-        for file_id, file_data in list(file_registry.items()):
-            # Clean up files older than 30 minutes or already downloaded
-            if current_time - file_data['created_time'] > 1800 or file_data.get('downloaded', False):
-                file_data = file_registry.pop(file_id, None)
-                if file_data:
-                    if cleanup_file(file_data.get('pdf_path')):
-                        files_cleaned += 1
-                    if cleanup_file(file_data.get('docx_path')):
-                        files_cleaned += 1
-        
-        return jsonify({
-            'message': f'Cleaned up {files_cleaned} files',
-            'files_remaining': len(file_registry)
-        })
-    
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Cleaned up file: {file_path}")
+            return True
     except Exception as e:
-        logger.error(f"Cleanup error: {str(e)}")
-        return jsonify({'error': 'Cleanup failed'}), 500
+        logger.error(f"Cleanup error for {file_path}: {str(e)}")
+    return False
+
+@app.route('/test', methods=['GET'])
+def test_endpoint():
+    """
+    Test endpoint to verify backend is working
+    """
+    return jsonify({
+        'status': 'working',
+        'timestamp': datetime.utcnow().isoformat(),
+        'message': 'Backend is running correctly'
+    })
 
 # Error handlers
 @app.errorhandler(413)
@@ -278,25 +239,7 @@ def too_large(e):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-# Start cleanup thread when app starts
-@app.before_request
-def before_first_request():
-    """
-    Start cleanup thread before the first request
-    """
-    if not hasattr(app, 'cleanup_started'):
-        start_cleanup_thread()
-        atexit.register(cleanup_on_shutdown)
-        app.cleanup_started = True
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # Start cleanup thread
-    start_cleanup_thread()
-    # Register shutdown cleanup
-    atexit.register(cleanup_on_shutdown)
+    logger.info(f"Starting PDF to Word converter on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)

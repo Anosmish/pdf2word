@@ -11,7 +11,7 @@ class PDFToWordConverter {
         this.errorMessage = document.getElementById('errorMessage');
         
         // Update with your Render backend URL
-        this.backendUrl = 'https://your-backend-app.onrender.com';
+        this.backendUrl = 'https://pdf2word-4hoo.onrender.com';
         
         this.initEventListeners();
     }

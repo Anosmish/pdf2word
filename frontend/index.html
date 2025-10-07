@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Word Converter</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PDF to Word Converter</h1>
+            <p>Convert your PDF files to editable Word documents</p>
+        </header>
+
+        <main>
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-content">
+                    <i class="upload-icon">📄</i>
+                    <h3>Drop your PDF file here</h3>
+                    <p>or click to browse</p>
+                    <input type="file" id="fileInput" accept=".pdf" hidden>
+                    <button class="browse-btn" onclick="document.getElementById('fileInput').click()">
+                        Browse Files
+                    </button>
+                </div>
+            </div>
+
+            <div class="progress-area" id="progressArea" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress" id="progress"></div>
+                </div>
+                <p class="status" id="status">Converting...</p>
+            </div>
+
+            <div class="result-area" id="resultArea" style="display: none;">
+                <div class="success-message">
+                    <i class="success-icon">✅</i>
+                    <h3>Conversion Successful!</h3>
+                    <button class="download-btn" id="downloadBtn">Download Word Document</button>
+                </div>
+            </div>
+
+            <div class="error-area" id="errorArea" style="display: none;">
+                <div class="error-message">
+                    <i class="error-icon">❌</i>
+                    <h3 id="errorMessage">Conversion Failed</h3>
+                    <button class="retry-btn" onclick="resetConverter()">Try Again</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+          <p>Supports PDF files up to 20MB • Formatting preserved • Free to use</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
